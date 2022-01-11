@@ -7,10 +7,22 @@ from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
+# # indices for slicing epoch into ERN part and Pe part (in milisecons)
+# start_ern = 100
+# stop_ern = 250
+# start_pe = 250
+# stop_pe= 450
+
+# # indices in timepoints
+# start_ern_tp = int(signal_frequency * start_ern / 1000)
+# stop_ern_tp = int(signal_frequency * stop_ern / 1000)
+# start_pe_tp = int(signal_frequency * start_pe / 1000)
+# stop_pe_tp = int(signal_frequency * stop_pe / 1000)
+
 
 signal_frequency = 256
 
-# require 4-D data: participants x epochs x channels x timepoints
+# require 3-D data: epochs x channels x timepoints
 class LowpassFilter(TransformerMixin, BaseEstimator):
     def __init__(self):
         super().__init__()
@@ -26,22 +38,16 @@ class LowpassFilter(TransformerMixin, BaseEstimator):
             6, cutoff / (fs / 2), btype="low", analog=False
         )  # 6th order Butterworth low-pass
 
-        filtered_participants_data = []
+        # filter each signal piece with Butterworth filter
+        filtred_signal = np.array(
+            [
+                np.array([lfilter(B, A, channel, axis=0) for channel in epoch])
+                for epoch in X
+            ]
+        )
 
-        for participant_data in X:
-            # filter each signal piece with Butterworth filter
-            filtred_signal = np.array(
-                [
-                    np.array([lfilter(B, A, channel, axis=0) for channel in epoch])
-                    for epoch in participant_data
-                ]
-            )
-            # print(f"SIGNAL: {filtred_signal.shape}\n")
-            filtered_participants_data.append(filtred_signal)
-
-        filtered_participants_data = np.array(filtered_participants_data)
-        print(f"IN BUTTERWORTH FILTER SHAPE: {filtered_participants_data.shape}")
-        return filtered_participants_data
+        print(f"IN BUTTERWORTH FILTER SHAPE: {filtred_signal.shape}")
+        return filtred_signal
 
 
 # require 4-D data: participants x epochs x channels x timepoints
@@ -63,7 +69,7 @@ class AveragePerParticipant(TransformerMixin, BaseEstimator):
         return averaged_paricipant_epochs
 
 
-# require 4-D data: participants x epochs x channels x timepoints
+# require 3-D data: epochs x channels x timepoints
 class SpatialFilterPreprocessing(TransformerMixin, BaseEstimator):
     def __init__(self):
         super().__init__()
@@ -72,13 +78,8 @@ class SpatialFilterPreprocessing(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        # join data from all participants
-        concatenated_all_participants_data = np.concatenate(X, axis=0)
-
         # join data from each epoch. Shape: channels (n_features) x timepoints*epochs (n_samples)
-        timepoints_per_channel = np.concatenate(
-            concatenated_all_participants_data, axis=1
-        )
+        timepoints_per_channel = np.concatenate(X, axis=1)
 
         # create input vector for spatial filter training: array-like of shape (n_samples, n_features)
         spatial_filter_input_data = timepoints_per_channel.T
@@ -87,12 +88,11 @@ class SpatialFilterPreprocessing(TransformerMixin, BaseEstimator):
 
 
 # X in spatial-filter shape: n_samples x n_features
-# Recovers shape: participant x epoch x channel(spatial_filter_component) x timepoints
+# Recovers shape: epoch x channel(spatial_filter_component) x timepoints
 class SpatialFilterPostprocessing(TransformerMixin, BaseEstimator):
-    def __init__(self, timepoints_count, participants_data_indices):
+    def __init__(self, timepoints_count):
         super().__init__()
         self.timepoints_count = timepoints_count
-        self.participants_data_indices = participants_data_indices
 
     def fit(self, X, y=None):
         return self
@@ -113,15 +113,7 @@ class SpatialFilterPostprocessing(TransformerMixin, BaseEstimator):
         )
         data_epoch_wise = np.transpose(data_channel_wise, (1, 0, 2))
 
-        # retrieve shape of participant x epoch x n_components x timepoints
-
-        data = []
-
-        for indice in self.participants_data_indices:
-            participant_data = data_epoch_wise[indice[0] : indice[1] + 1]
-            data.append(participant_data)
-
-        return np.array(data)
+        return np.array(data_epoch_wise)
 
 
 # reshape data from (channels x epoch x features) to (epochs x channles x features)
@@ -217,50 +209,6 @@ class BinTransformer(TransformerMixin, BaseEstimator):
         return binned_data
 
 
-class ERNdataTransformer(TransformerMixin, BaseEstimator):
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-
-        data_ern = []
-
-        for participant in X:
-            participant_ern_data = [
-                participant[epoch].take(
-                    indices=range(start_ern_tp, stop_ern_tp), axis=1
-                )
-                for epoch in participant
-            ]
-
-            data_ern.append(participant_ern_data)
-        data_ern = np.array(data_ern)
-
-        print(f"IN ERN RETURN SHAPE: {data_ern[0].shape}")
-        return data_ern
-
-
-class PEdataTransformer(TransformerMixin, BaseEstimator):
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-
-        data_pe = []
-
-        for participant in X:
-            participant_pe_data = [
-                participant[epoch].take(indices=range(start_pe_tp, stop_pe_tp), axis=1)
-                for epoch in participant
-            ]
-
-            data_pe.append(participant_pe_data)
-        data_pe = np.array(data_pe)
-
-        print(f"IN PE RETURN SHAPE: {data_pe[0].shape}")
-        return data_pe
-
-
 # indices in timepoints
 start_ern_bin = 2
 stop_ern_bin = 5
@@ -314,7 +262,7 @@ class GetFeature(TransformerMixin, BaseEstimator):
     def transform(self, X):
         feature = np.array(
             X[X["marker"] == self.dataset][self.feature_name].to_list()
-        ).reshape(-1, 1, 1)
+        ).reshape(-1, 1)
         print(f"IN FEATURE RETURN SHAPE: {feature.shape}")
 
         return feature
