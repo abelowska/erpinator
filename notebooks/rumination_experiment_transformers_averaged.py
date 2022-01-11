@@ -31,7 +31,7 @@ class LowpassFilter(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        print(f"IN LOWPASS FILTER")
+        # print(f"IN LOWPASS FILTER")
         fs = signal_frequency
         cutoff = 40  # Hz
         B, A = butter(
@@ -46,7 +46,7 @@ class LowpassFilter(TransformerMixin, BaseEstimator):
             ]
         )
 
-        print(f"IN BUTTERWORTH FILTER SHAPE: {filtred_signal.shape}")
+        # print(f"IN BUTTERWORTH FILTER SHAPE: {filtred_signal.shape}")
         return filtred_signal
 
 
@@ -60,11 +60,11 @@ class AveragePerParticipant(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        print(f"IN AVERAGE X SHAPE: {X.shape}")
+        # print(f"IN AVERAGE X SHAPE: {X.shape}")
         averaged_paricipant_epochs = np.array(
             [np.mean(participant, axis=0) for participant in X]
         )
-        print(f"IN AVERAGE RETURN SHAPE: {averaged_paricipant_epochs.shape}")
+        # print(f"IN AVERAGE RETURN SHAPE: {averaged_paricipant_epochs.shape}")
         print(averaged_paricipant_epochs.dtype)
         return averaged_paricipant_epochs
 
@@ -130,7 +130,7 @@ class PostprocessingTransformer(TransformerMixin, BaseEstimator):
         epochs_per_channel_feature = vectorized_data.reshape(
             vectorized_data.shape[0], -1
         )
-        print(f"POST SHAPE:{epochs_per_channel_feature.shape}")
+        # print(f"POST SHAPE:{epochs_per_channel_feature.shape}")
         return epochs_per_channel_feature
 
 
@@ -164,8 +164,8 @@ class ChannelExtraction(TransformerMixin, BaseEstimator):
             )
 
             selected_data.append(participant_selected_data_epoch_wise)
-        selected_data = np.array(selected_data)
-        print(f"EXTRACTION {selected_data.shape}")
+        selected_data = np.array(selected_data, dtype=object)
+        # print(f"EXTRACTION {selected_data.shape}")
         return selected_data
 
 
@@ -179,7 +179,7 @@ class ChannelDataSwap(TransformerMixin, BaseEstimator):
 
     def transform(self, X):
         data_channel_swaped = np.transpose(X, (1, 0, 2))
-        print(f"SWAP shape: {data_channel_swaped.shape}")
+        # print(f"SWAP shape: {data_channel_swaped.shape}")
         return data_channel_swaped
 
 
@@ -205,7 +205,7 @@ class BinTransformer(TransformerMixin, BaseEstimator):
 
     def transform(self, X):
         binned_data = np.array([self.bin_epoch(epoch) for epoch in X])
-        print(f"IN BINS RETURN SHAPE: {binned_data.shape}")
+        # print(f"IN BINS RETURN SHAPE: {binned_data.shape}")
         return binned_data
 
 
@@ -229,7 +229,7 @@ class ErnTransformer(TransformerMixin, BaseEstimator):
             ]
         )
 
-        print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
+        # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
         return ern_data
 
 
@@ -246,7 +246,7 @@ class PeTransformer(TransformerMixin, BaseEstimator):
             ]
         )
 
-        print(f"IN PE RETURN SHAPE: {pe_data.shape}")
+        # print(f"IN PE RETURN SHAPE: {pe_data.shape}")
         return pe_data
 
 
@@ -263,7 +263,7 @@ class GetFeature(TransformerMixin, BaseEstimator):
         feature = np.array(
             X[X["marker"] == self.dataset][self.feature_name].to_list()
         ).reshape(-1, 1)
-        print(f"IN FEATURE RETURN SHAPE: {feature.shape}")
+        # print(f"IN FEATURE RETURN SHAPE: {feature.shape}")
 
         return feature
 
@@ -277,6 +277,8 @@ class EEGdata(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
-        X_train = np.array(X[X["marker"] == self.dataset]["epochs"].tolist())
+        X_train = np.array(
+            X[X["marker"] == self.dataset]["epochs"].tolist(), dtype=object
+        )
 
         return X_train
