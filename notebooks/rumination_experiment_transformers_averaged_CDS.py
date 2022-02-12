@@ -118,11 +118,32 @@ class ExtractData(TransformerMixin, BaseEstimator):
         return data
 
 
+# return np array of epochs per participant SHAPE: participants x channels x timepoints
+class ExtractDataEpochs(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        data = np.array(X["epoch"].map(lambda x: x["error_response"]._data).to_list())
+        return data
+
+
+class ReferenceToAverage(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+
+        X["epoch"] = X["epoch"].map(
+            lambda x: mne.set_eeg_reference(
+                x, ref_channels="average", verbose="critical"
+            )[0]
+        )
+        return X
+
+
 # require 3-D data: epochs x channels x timepoints
 class LowpassFilter(TransformerMixin, BaseEstimator):
-    def __init__(self):
-        super().__init__()
-
     def fit(self, X, y=None):
         return self
 
@@ -130,6 +151,33 @@ class LowpassFilter(TransformerMixin, BaseEstimator):
         # print(f"IN LOWPASS FILTER")
         fs = signal_frequency
         cutoff = 40  # Hz
+        B, A = butter(
+            6, cutoff / (fs / 2), btype="low", analog=False
+        )  # 6th order Butterworth low-pass
+
+        # filter each signal piece with Butterworth filter
+        filtred_signal = np.array(
+            [
+                np.array([lfilter(B, A, channel, axis=0) for channel in epoch])
+                for epoch in X
+            ]
+        )
+
+        # print(f"IN BUTTERWORTH FILTER SHAPE: {filtred_signal.shape}")
+        return filtred_signal
+
+
+class LowpassFilter2(TransformerMixin, BaseEstimator):
+    def __init__(self, cutoff=40):
+        self.cutoff = cutoff
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        # print(f"IN LOWPASS FILTER")
+        fs = signal_frequency
+        cutoff = self.cutoff  # Hz
         B, A = butter(
             6, cutoff / (fs / 2), btype="low", analog=False
         )  # 6th order Butterworth low-pass
@@ -330,10 +378,11 @@ stop_pe = 0.35
 # stop_pe_bin = 7
 
 # indices for regression_union_100-600_baselined_centered_ampl-2-pe
-start_ern_bin = 0
-stop_ern_bin = 3
-start_pe_bin = 2
-stop_pe_bin = 7
+# start_ern_bin = 0
+# stop_ern_bin = 3
+# start_pe_bin = 2
+# stop_pe_bin = 7
+
 
 # # indices for regression_union_100-600_baselined_non-centered_ampl-2-pe
 # start_ern_bin = 1
@@ -391,6 +440,63 @@ class CenteredSignalAfterBaseline(TransformerMixin, BaseEstimator):
 
         #         # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
         return centered_data
+
+
+# tu wchodzi zbinowany
+class CenteredSignalAfterBaseline3(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        search_start_bin = 2
+
+        search_data = np.array(
+            [
+                participant.take(indices=range(search_start_bin, 5), axis=1)
+                for participant in X
+            ]
+        )
+
+        signal_max_positions = np.array(
+            [search_start_bin + np.argmax(epoch[0]) for epoch in search_data]
+        )
+
+        # print(signal_max_positions)
+
+        X_index_zip = zip(X, signal_max_positions)
+
+        centered_data = []
+        for participant, index in X_index_zip:
+            # print(f"participant{participant}, index {index}")
+            centered_data.append(
+                participant.take(indices=range(index - 2, index - 1 + 10), axis=1)
+            )
+        centered_data = np.array(centered_data)
+        # centered_data = np.array(
+        #     [
+        #         # print(f"participant{participant}, index {index}")
+        #         participant.take(indices=range(index-2, 15), axis=1)
+        #         # print(f"participant{participant}, index {index}")
+        #         for participant, index in X_index_zip
+        #     ]
+        # )
+
+        # print(centered_data)
+
+        #         # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
+        return centered_data
+
+
+# tu wchodzi zbinowany
+class AbsSignal(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        X_abs = np.absolute(X)
+        return X_abs
 
 
 # tu wchodzi zbinowany
@@ -490,7 +596,34 @@ class CenteredPeAfterBaseline(TransformerMixin, BaseEstimator):
         return centered_data
 
 
+class GetComponent(TransformerMixin, BaseEstimator):
+    def __init__(self, component_number=0):
+        super().__init__()
+        self.component_number = component_number
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        components_data = np.array(
+            [
+                participant.take(
+                    indices=range(self.component_number, self.component_number + 1),
+                    axis=0,
+                )
+                for participant in X
+            ]
+        )
+        return components_data
+
+
 class ErnTransformer(TransformerMixin, BaseEstimator):
+    def __init__(self, start_ern_bin=0, stop_ern_bin=4):
+        super().__init__()
+        self.start_ern_bin = start_ern_bin
+        self.stop_ern_bin = stop_ern_bin
+
     def fit(self, X, y=None):
         return self
 
@@ -498,7 +631,9 @@ class ErnTransformer(TransformerMixin, BaseEstimator):
 
         ern_data = np.array(
             [
-                participant.take(indices=range(start_ern_bin, stop_ern_bin), axis=1)
+                participant.take(
+                    indices=range(self.start_ern_bin, self.stop_ern_bin), axis=1
+                )
                 for participant in X
             ]
         )
@@ -507,7 +642,26 @@ class ErnTransformer(TransformerMixin, BaseEstimator):
         return ern_data
 
 
+class ErnTransformer2(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        ern_data = np.array(
+            [participant.take(indices=range(1, 5), axis=1) for participant in X]
+        )
+
+        # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
+        return ern_data
+
+
 class PeTransformer(TransformerMixin, BaseEstimator):
+    def __init__(self, start_pe_bin=3, stop_pe_bin=8):
+        super().__init__()
+        self.start_pe_bin = start_pe_bin
+        self.stop_pe_bin = stop_pe_bin
+
     def fit(self, X, y=None):
         return self
 
@@ -515,9 +669,25 @@ class PeTransformer(TransformerMixin, BaseEstimator):
 
         pe_data = np.array(
             [
-                participant.take(indices=range(start_pe_bin, stop_pe_bin), axis=1)
+                participant.take(
+                    indices=range(self.start_pe_bin, self.stop_pe_bin), axis=1
+                )
                 for participant in X
             ]
+        )
+
+        # print(f"IN PE RETURN SHAPE: {pe_data.shape}")
+        return pe_data
+
+
+class PeTransformer2(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        pe_data = np.array(
+            [participant.take(indices=range(3, 8), axis=1) for participant in X]
         )
 
         # print(f"IN PE RETURN SHAPE: {pe_data.shape}")
@@ -680,6 +850,16 @@ class PeAmplitude3(TransformerMixin, BaseEstimator):
         return bins_baselined
 
 
+class ReverseSignal(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        data = np.negative(X)
+        return data
+
+
 class ReverseComponent2(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         return self
@@ -709,6 +889,38 @@ class ReverseComponent2(TransformerMixin, BaseEstimator):
         return data
 
 
+class ReverseComponent3(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        data = []
+
+        for participant in X:
+            participant_data = []
+            negatived_3_channel = np.negative(participant[2])
+            participant_data.append(participant[0])
+            participant_data.append(participant[1])
+            participant_data.append(negatived_3_channel)
+
+            if len(participant) > 3:
+
+                for i in range(3, len(participant)):
+                    participant_data.append(participant[i])
+
+            participant_data = np.array(participant_data)
+            data.append(participant_data)
+
+        data = np.array(data)
+
+        # negatived_comp_2_X = np.array(
+        #     [np.array([channel[1] = np.negative(channel[1]) for participant in X]
+        # )
+        # print(f"IN ERN min max RETURN SHAPE: {ern_min_max.shape}")
+        return data
+
+
 class ErnBaselined(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         return self
@@ -717,6 +929,69 @@ class ErnBaselined(TransformerMixin, BaseEstimator):
 
         baseline = np.array(
             [np.array([[min(this_bin[1:4])] for this_bin in channel]) for channel in X]
+        )
+
+        bins_baselined = X - baseline
+
+        # print(f"IN ERN min max RETURN SHAPE: {ern_min_max.shape}")
+        return bins_baselined
+
+
+class ExtractBaseline(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        signal_max_positions = np.array(
+            [
+                np.array([np.argmin(channel[0:4]) for channel in participant])
+                for participant in X
+            ]
+        )
+
+        X_index_zip = zip(X, signal_max_positions)
+
+        centered_data = []
+        for participant, index in X_index_zip:
+            participant_data = []
+            for i in range(0, len(index)):
+                current_channel_bins = participant[i].take(
+                    indices=range(max(0, index[i] - 1), index[i] + 2), axis=0
+                )
+                participant_data.append(current_channel_bins)
+            centered_data.append(participant_data)
+
+        centered_data = np.array(centered_data)
+        # print(f"participant{participant}, index {index}")
+        # centered_data.append(
+        #     participant.take(indices=range(index - 1, index + 6), axis=1)
+        # )
+
+        # centered_data = np.array(centered_data)
+        # centered_data = np.array(
+        #     [
+        #         # print(f"participant{participant}, index {index}")
+        #         participant.take(indices=range(index-2, 15), axis=1)
+        #         # print(f"participant{participant}, index {index}")
+        #         for participant, index in X_index_zip
+        #     ]
+        # )
+
+        # print(centered_data)
+
+        #         # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
+        return centered_data
+
+
+class ErnBaselined_0_3(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        baseline = np.array(
+            [np.array([[min(this_bin[0:3])] for this_bin in channel]) for channel in X]
         )
 
         bins_baselined = X - baseline
@@ -1128,6 +1403,26 @@ class EEGdata(TransformerMixin, BaseEstimator):
 
 
 class NarrowIndices(TransformerMixin, BaseEstimator):
+    def __init__(self, start, stop):
+        super().__init__()
+        self.start = start
+        self.stop = stop
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X_train = np.array(
+            [
+                participant.take(indices=range(self.start, self.stop), axis=1)
+                for participant in X
+            ]
+        )
+
+        return X_train
+
+
+class NarrowIndices2(TransformerMixin, BaseEstimator):
     def __init__(self, start, stop):
         super().__init__()
         self.start = start
