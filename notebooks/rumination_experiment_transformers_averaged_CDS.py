@@ -242,6 +242,8 @@ class SpatialFilterPostprocessing(TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X):
+
+        # print(f"AFTER SPOC SHAPE:{X.shape}")
         # reshape to n_features x n_samples
         X_transposed = X.T
 
