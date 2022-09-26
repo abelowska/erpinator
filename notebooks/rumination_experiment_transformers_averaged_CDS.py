@@ -66,7 +66,7 @@ class PickChannels(TransformerMixin, BaseEstimator):
     def transform(self, X, y=None):
 
         X["epoch"] = X["epoch"].map(
-            lambda x: x.pick_channels(ch_names=self.channels_list)
+            lambda x: x.pick_channels(ch_names=self.channels_list, ordered=True)
         )
         # epochs_filtered = X.pick_channels(ch_names = self.channels_list, copy=True)
         return X
@@ -209,7 +209,7 @@ class AveragePerParticipant(TransformerMixin, BaseEstimator):
             [np.mean(participant, axis=0) for participant in X]
         )
         # print(f"IN AVERAGE RETURN SHAPE: {averaged_paricipant_epochs.shape}")
-        print(averaged_paricipant_epochs.dtype)
+        # print(averaged_paricipant_epochs.dtype)
         return averaged_paricipant_epochs
 
 
@@ -491,6 +491,52 @@ class CenteredSignalAfterBaseline3(TransformerMixin, BaseEstimator):
 
 
 # tu wchodzi zbinowany
+class CenteredSignalAfterBaseline3_bis(TransformerMixin, BaseEstimator):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+
+        search_start_bin = 2
+
+        search_data = np.array(
+            [
+                participant.take(indices=range(search_start_bin, 5), axis=1)
+                for participant in X
+            ]
+        )
+
+        signal_max_positions = np.array(
+            [search_start_bin + np.argmin(epoch[0]) for epoch in search_data]
+        )
+
+        # print(signal_max_positions)
+
+        X_index_zip = zip(X, signal_max_positions)
+
+        centered_data = []
+        for participant, index in X_index_zip:
+            # print(f"participant{participant}, index {index}")
+            centered_data.append(
+                participant.take(indices=range(index - 2, index - 1 + 10), axis=1)
+            )
+        centered_data = np.array(centered_data)
+        # centered_data = np.array(
+        #     [
+        #         # print(f"participant{participant}, index {index}")
+        #         participant.take(indices=range(index-2, 15), axis=1)
+        #         # print(f"participant{participant}, index {index}")
+        #         for participant, index in X_index_zip
+        #     ]
+        # )
+
+        # print(centered_data)
+
+        #         # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
+        return centered_data
+
+
+# tu wchodzi zbinowany
 class AbsSignal(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         return self
@@ -500,6 +546,17 @@ class AbsSignal(TransformerMixin, BaseEstimator):
         X_abs = np.absolute(X)
         return X_abs
 
+
+# class NegLastItemInComponent():
+#     def fit(self, X, y=None):
+#         return self
+
+#     def transform(self, X, y=None):
+#         start = 1
+
+#         for epoch in X:
+#             epoch[
+#         return
 
 # tu wchodzi zbinowany
 class CenteredSignalAfterBaseline2(TransformerMixin, BaseEstimator):
@@ -696,7 +753,12 @@ class PeTransformer2(TransformerMixin, BaseEstimator):
         return pe_data
 
 
-class ErnTransformerTP(TransformerMixin, BaseEstimator):
+class ErnTransformerTimepoints(TransformerMixin, BaseEstimator):
+    def __init__(self, start_ern_tp=25, stop_ern_tp=50):
+        super().__init__()
+        self.start_ern_tp = start_ern_tp
+        self.stop_ern_tp = stop_ern_tp
+
     def fit(self, X, y=None):
         return self
 
@@ -704,7 +766,9 @@ class ErnTransformerTP(TransformerMixin, BaseEstimator):
 
         ern_data = np.array(
             [
-                participant.take(indices=range(start_ern_tp, stop_ern_tp), axis=1)
+                participant.take(
+                    indices=range(self.start_ern_tp, self.stop_ern_tp), axis=1
+                )
                 for participant in X
             ]
         )
@@ -713,7 +777,12 @@ class ErnTransformerTP(TransformerMixin, BaseEstimator):
         return ern_data
 
 
-class PeTransformerTP(TransformerMixin, BaseEstimator):
+class PeTransformerTimepoints(TransformerMixin, BaseEstimator):
+    def __init__(self, start_pe_tp=25, stop_pe_tp=50):
+        super().__init__()
+        self.start_pe_tp = start_pe_tp
+        self.stop_pe_tp = stop_pe_tp
+
     def fit(self, X, y=None):
         return self
 
@@ -721,13 +790,30 @@ class PeTransformerTP(TransformerMixin, BaseEstimator):
 
         pe_data = np.array(
             [
-                participant.take(indices=range(start_pe_tp, stop_pe_tp), axis=1)
+                participant.take(
+                    indices=range(self.start_pe_tp, self.stop_pe_tp), axis=1
+                )
                 for participant in X
             ]
         )
 
-        # print(f"IN PE RETURN SHAPE: {pe_data.shape}")
+        # print(f"IN ERN RETURN SHAPE: {ern_data.shape}")
         return pe_data
+
+
+class AverageSignal(TransformerMixin, BaseEstimator):
+    def __init__(self):
+        super().__init__()
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        # print(f"IN AVERAGE X SHAPE: {X.shape}")
+        averaged_signal = np.array([np.mean(participant, axis=-1) for participant in X])
+        # print(f"IN AVERAGE RETURN SHAPE: {averaged_paricipant_epochs.shape}")
+        # print(averaged_paricipant_epochs.dtype)
+        return averaged_signal
 
 
 class ErnMinMaxFeatures(TransformerMixin, BaseEstimator):
